@@ -238,6 +238,10 @@ def build_missing_indicators(
 
 def expected_source_for_indicator(economy_code: str, indicator_name: str) -> str:
     name = indicator_name.lower()
+    if economy_code == "EZ" and any(term in name for term in ["bank lending", "credit / financial", "sovereign spread"]):
+        return "ECB / Eurostat / Eurozone market-data module"
+    if economy_code == "EZ" and any(term in name for term in ["services inflation", "wage"]):
+        return "ECB / Eurostat"
     if "core pce" in name or "headline inflation" in name or "claims" in name or "unemployment" in name or "gdp" in name:
         return "FRED / OECD fallback where configured"
     if "hicp" in name:

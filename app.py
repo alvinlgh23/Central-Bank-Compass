@@ -5,12 +5,13 @@ import yaml
 from dotenv import load_dotenv
 
 from src.allocation import run_allocation_framework
-from src.data_sources.commodities import allocation_energy_context, energy_context_summary, render_energy_check, render_energy_shock_monitor, us_inflation_energy_interpretation
+from src.data_sources.commodities import allocation_energy_context, energy_context_summary, get_energy_shock_indicators, render_energy_check, render_energy_shock_monitor, us_inflation_energy_interpretation
 from src.country_profiles import get_profile
 from src.backtest import run_backtest
 from src.data_sources import configured_placeholders, fetch_economy_data
 from src.data_sources import fred
 from src.indicators import build_indicators
+from src.eurozone_report import render_eurozone_report
 from src.japan_pressure import run_japan_policy_pressure_report
 from src.liquidity import run_liquidity_compass
 from src.narrative_filter import run_narrative_stress_test
@@ -118,6 +119,9 @@ def run_policy_report(
     placeholders = configured_placeholders(config, economy_code)
     indicators = build_indicators(economy_code, data)
     signal = build_policy_signal(indicators, profile, config, data_warnings, placeholders)
+    if economy_code == "EZ":
+        report = render_eurozone_report(signal, get_energy_shock_indicators(config), summary_only=summary_only)
+        return report + "\n\n" + fred.render_data_source_status()
     report = render_report(signal) + "\n\n" + fred.render_data_source_status()
     if economy_code == "US" and legacy_rules:
         return "Model Type: Rule-Based Threshold Model\nLegacy Mode: --legacy-rules\n\n" + report
@@ -183,11 +187,15 @@ def run_full_macro_dashboard(config: dict, project_dir: Path, debug_data: bool =
     print("Running Liquidity...", flush=True)
     liquidity_report = run_liquidity_report(config, project_dir, show_details=False, debug_data=debug_data)
 
+    print("Running Eurozone Policy...", flush=True)
+    eurozone_report = run_policy_report("EZ", config, debug_data=debug_data, summary_only=True)
+
     print("Running Allocation...", flush=True)
     allocation_report = run_allocation_report(config, project_dir, show_details=False, debug_data=debug_data)
 
     sections = [
         policy_report,
+        eurozone_report,
         liquidity_report,
         allocation_report,
     ]

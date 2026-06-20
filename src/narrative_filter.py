@@ -97,7 +97,8 @@ def collect_values(code: str, config: dict[str, Any], debug_data: bool) -> dict[
                     "services_inflation": None,
                     "wage_pressure": None,
                     "growth": indicators.get("growth_yoy"),
-                    "pmi": indicators.get("pmi"),
+                    "business_confidence_yoy": indicators.get("business_confidence_yoy"),
+                    "bank_lending_stress": indicators.get("bank_lending_stress"),
                     "peripheral_spread": indicators.get("sovereign_spread"),
                     "currency": indicators.get("currency_change_yoy"),
                     "oil_yoy": energy.get("yoy_change"),
@@ -164,8 +165,8 @@ def narrative_checks(code: str, narrative: str, values: dict[str, float | None])
     if code == "EZ":
         easing = "cut" in text or "dovish" in text or "weak" in text
         if easing:
-            return [below(values, "growth", 1), below(values, "core_inflation", 2.5), below(values, "pmi", 100), below(values, "peripheral_spread", 2), below(values, "oil_yoy", 20)]
-        return [above(values, "core_inflation", 2.5), above(values, "pmi", 99), below(values, "peripheral_spread", 2), above(values, "oil_yoy", 20)]
+            return [below(values, "growth", 1), below(values, "core_inflation", 2.5), below(values, "business_confidence_yoy", 0), below(values, "peripheral_spread", 2.5), below(values, "oil_yoy", 20)]
+        return [above(values, "core_inflation", 2.5), above(values, "business_confidence_yoy", 0), below(values, "peripheral_spread", 2.5), above(values, "oil_yoy", 20)]
     if code == "SG":
         return [below(values, "headline_inflation", 2.5), below(values, "import_inflation", 2), below(values, "growth", 2), below(values, "external_demand", 2)]
     if code == "CN":
@@ -184,7 +185,11 @@ def interpret_evidence(code: str, key: str, value: float | None, narrative: str)
         if key == "peripheral_spread":
             return "Peripheral stress is contained." if value < 2 else "Wider peripheral spreads raise fragmentation risk."
         if key == "oil_yoy":
-            return "An energy shock can lift headline HICP without proving domestic services/wage persistence." if value >= 20 else "Energy is not adding a major inflation shock, so weak growth and core inflation deserve more weight."
+                return "An energy shock can lift headline HICP without proving domestic services/wage persistence." if value >= 20 else "Energy is not adding a major inflation shock, so weak growth and core inflation deserve more weight."
+        if key == "business_confidence_yoy":
+            return "Business confidence is contracting year over year, supporting weak-growth concerns." if value < 0 else "Business confidence is not contracting year over year."
+        if key == "bank_lending_stress":
+            return "Bank-lending stress supports easier ECB policy." if value > 0 else "Bank lending does not show material stress."
     if code == "SG":
         if key in {"core_inflation", "headline_inflation", "import_inflation"}:
             return "Inflation pressure remains relevant for the SGD NEER stance." if value >= 2.5 else "Cooling inflation supports a more dovish MAS narrative."
@@ -208,6 +213,8 @@ def closest_narrative(market_view: str | None, narratives: list[str]) -> str:
 
 
 def render_result(result: NarrativeResult) -> str:
+    if result.definition.code == "EZ":
+        return render_ecb_narrative_result(result)
     definition = result.definition
     parts = [
         "COUNTRY NARRATIVE STRESS TEST",
@@ -244,6 +251,35 @@ def render_result(result: NarrativeResult) -> str:
     parts.extend(["", "Data Gaps:"])
     parts.extend([f"- {gap}" for gap in result.data_gaps] or ["- None in the configured evidence set."])
     parts.extend(["", "This is a narrative stress test, not a trading signal or a prediction that the central bank will act."])
+    return "\n".join(parts)
+
+
+def render_ecb_narrative_result(result: NarrativeResult) -> str:
+    definition = result.definition
+    parts = [
+        "ECB NARRATIVE FILTER",
+        "=================================================",
+        "Market Narrative Being Tested:",
+        result.narrative,
+        "",
+        "Reality Check:",
+        definition.reality_check,
+        "",
+        f"Verdict: {result.verdict}",
+        f"Confidence: {result.confidence}%",
+        "",
+        "ECB Evidence:",
+    ]
+    for spec in definition.evidence:
+        parts.extend(
+            [
+                f"- {spec.name}: {format_value(result.values.get(spec.key))}",
+                f"  Context: {spec.context}",
+                f"  Interpretation: {result.interpretations[spec.key]}",
+            ]
+        )
+    parts.extend(["", "Data Gaps:", *([f"- {gap}" for gap in result.data_gaps] or ["- None."])])
+    parts.extend(["", "This is a narrative stress test, not a trading signal or an ECB forecast."])
     return "\n".join(parts)
 
 
@@ -321,7 +357,7 @@ def definition(
 
 
 DEFINITIONS = {
-    "EZ": definition("EZ", "Eurozone", "European Central Bank", "Policy rates, bank lending, and fragmentation control", ["ECB will cut aggressively because European growth is weak.", "ECB cannot cut because services inflation and wages are sticky.", "Germany weakness means Eurozone policy must turn dovish.", "Peripheral spreads will constrain ECB tightening."], "ECB must separate domestic core/services and wage persistence from energy-driven HICP volatility while monitoring weak growth, bank lending, peripheral spreads, and EUR pressure.", [("Core HICP", "core_inflation", "Below roughly 2.5% supports easing"), ("Services Inflation", "services_inflation", "Cooling services inflation is required for aggressive easing"), ("Wage / Negotiated Wage Pressure", "wage_pressure", "Cooling wages are required for aggressive easing"), ("GDP Growth", "growth", "Below 1% indicates weak growth"), ("PMI / Confidence Proxy", "pmi", "Below neutral supports slowdown narrative"), ("Peripheral Sovereign Spread", "peripheral_spread", "Wider spreads raise fragmentation risk"), ("EUR/USD Pressure", "currency", "Sharp EUR weakness can constrain easing"), ("Oil YoY Change", "oil_yoy", ">=20% is an energy shock; <=-15% is energy disinflation")], ["Growth and PMI remain weak.", "Core/services inflation and wage pressure cool.", "Peripheral spreads remain stable.", "Energy prices do not create a renewed headline shock."], ["Core/services inflation remains sticky.", "Wage pressure persists.", "Financial stress or EUR weakness rises.", "A headline HICP rise is confirmed by domestic inflation breadth rather than oil alone."], {"Local Equities": "Easing can support duration-sensitive sectors, but weak earnings can offset it.", "Currency": "A more dovish ECB can pressure EUR unless global risk improves.", "Bonds": "Cooling inflation and weak growth generally support sovereign bonds.", "Global Risk Sentiment": "Fragmentation stress would be negative for European and global risk appetite."}),
+    "EZ": definition("EZ", "Eurozone", "European Central Bank", "Policy rates, bank lending, and fragmentation control", ["ECB will cut aggressively because European growth is weak.", "ECB cannot cut because services inflation and wages are sticky.", "Germany weakness means Eurozone policy must turn dovish.", "Peripheral spreads will constrain ECB tightening."], "ECB must separate domestic core/services and wage persistence from energy-driven HICP volatility while monitoring area-wide growth, bank lending, peripheral spreads, and EUR pressure.", [("Core HICP", "core_inflation", "Below roughly 2.5% supports easing"), ("Services Inflation", "services_inflation", "Cooling services inflation is required for aggressive easing"), ("Wage / Negotiated Wage Pressure", "wage_pressure", "Cooling wages are required for aggressive easing"), ("GDP Growth", "growth", "Below 1% indicates weak growth"), ("Business Confidence Index YoY Change", "business_confidence_yoy", "A negative YoY change supports slowdown risk; this is not a PMI level"), ("Bank Lending Stress", "bank_lending_stress", "Tighter lending standards or weak credit transmission support easing"), ("Peripheral Sovereign Spread", "peripheral_spread", "Wider spreads raise fragmentation risk"), ("EUR/USD Pressure", "currency", "Sharp EUR weakness can constrain easing"), ("Oil YoY Change", "oil_yoy", ">=20% is an energy shock; <=-15% is energy disinflation")], ["Growth and business confidence remain weak.", "Core/services inflation and wage pressure cool.", "Bank lending weakens while peripheral spreads remain manageable.", "Energy prices do not create a renewed headline shock."], ["Core/services inflation remains sticky.", "Wage pressure persists.", "Financial stress or EUR weakness rises.", "A headline HICP rise is confirmed by domestic inflation breadth rather than oil alone."], {"Local Equities": "Easing can support duration-sensitive sectors, but weak earnings can offset it.", "Currency": "A more dovish ECB can pressure EUR unless global risk improves.", "Bonds": "Cooling inflation and weak growth generally support sovereign bonds.", "Global Risk Sentiment": "Fragmentation stress would be negative for European and global risk appetite."}),
     "SG": definition("SG", "Singapore", "Monetary Authority of Singapore", "SGD NEER policy band", ["Fed easing means MAS will ease too.", "SGD strength means MAS is already too tight.", "Singapore growth weakness will force MAS dovish.", "Imported inflation means MAS must stay tight."], "MAS targets the SGD NEER path, so imported inflation, external demand, growth, and the exchange-rate stance matter more than Fed policy alone.", [("MAS Core Inflation", "core_inflation", "Cooling core inflation supports easing"), ("Headline CPI", "headline_inflation", "Below roughly 2.5% reduces inflation pressure"), ("Import Inflation", "import_inflation", "Cooling import prices support easing"), ("External Demand", "external_demand", "Weak external demand supports easing"), ("GDP Growth", "growth", "Sub-2% growth adds easing pressure"), ("Unemployment", "unemployment", "Rising unemployment supports easing"), ("USD/SGD", "currency", "SGD weakness can constrain easing"), ("SGD NEER Shadow Proxy", "sgd_neer", "Restrictive SGD conditions can support easing")], ["Core and import inflation cool.", "External demand and GDP weaken.", "SGD NEER conditions are already restrictive."], ["Imported inflation remains firm.", "External demand improves.", "SGD weakness raises inflation risk."], {"Local Equities": "A dovish MAS stance can help domestic cyclicals if growth is not collapsing.", "Currency": "MAS easing would reduce SGD appreciation pressure.", "Bonds": "Lower inflation pressure can support Singapore government bonds and rates.", "Regional Risk Sentiment": "SGD policy is a useful regional inflation and FX signal.", "Singapore REITs": "Easier financial conditions can help rate-sensitive property assets conceptually."}),
     "CN": definition("CN", "China", "People's Bank of China", "Liquidity transmission, credit policy, FX stability, and targeted support", ["PBOC easing means China growth recovery is back.", "LPR cuts mean a major stimulus cycle has started.", "Property weakness means Beijing must launch bazooka stimulus.", "CNY weakness prevents meaningful easing."], "China recovery depends on credit transmission, property stabilization, real activity, and manageable CNY pressure, not policy-rate cuts alone.", [("M2 Growth", "m2_growth", "Above 5% is a positive liquidity signal"), ("Credit Impulse", "credit_impulse", "A positive turn is needed for stronger recovery confirmation"), ("Policy Rate / LPR Proxy", "policy_rate", "Cuts indicate easing intent, not transmission"), ("RRR", "rrr", "Cuts can release bank liquidity"), ("Property Stress", "property_stress", "Stabilization above severe contraction supports recovery"), ("CNY Pressure", "cny_pressure", "Large depreciation pressure constrains easing"), ("PMI", "pmi", "Improvement above neutral confirms activity"), ("Industrial Production", "industrial_production", "Acceleration confirms real-economy transmission"), ("Retail Sales", "retail_sales", "Consumer improvement broadens recovery"), ("Exports", "exports", "External demand can support the cycle")], ["Credit impulse turns positive.", "Property stress stabilizes.", "PMI, production, and retail activity improve.", "CNY pressure remains manageable."], ["Liquidity fails to reach private demand.", "Property stress worsens.", "CNY pressure intensifies.", "Real activity remains weak."], {"Local Equities": "Recovery requires earnings and credit transmission, not just policy announcements.", "Currency": "CNY weakness can constrain the scale of easing.", "Bonds": "Persistent weak demand can support government bonds despite easing measures.", "Commodities": "A real recovery would need construction and industrial confirmation.", "Global Risk Sentiment": "China transmission matters for Asia, Korea, Australia, and global cyclicals."}),
 }

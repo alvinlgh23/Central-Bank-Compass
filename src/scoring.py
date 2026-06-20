@@ -27,6 +27,14 @@ class ScoreBlock:
 
 
 def score_macro_blocks(indicators: IndicatorSet, profile: EconomyProfile) -> dict[str, ScoreBlock]:
+    if profile.code == "EZ":
+        return {
+            "inflation": score_ecb_inflation(indicators),
+            "labor": score_ecb_labor_slack(indicators),
+            "growth": score_ecb_growth_weakness(indicators),
+            "financial": score_ecb_financial_stress(indicators),
+            "currency": score_currency_pressure(indicators, profile),
+        }
     return {
         "inflation": score_inflation(indicators, profile),
         "labor": score_labor_weakness(indicators),
@@ -34,6 +42,166 @@ def score_macro_blocks(indicators: IndicatorSet, profile: EconomyProfile) -> dic
         "financial": score_financial_stress(indicators),
         "currency": score_currency_pressure(indicators, profile),
     }
+
+
+def score_ecb_inflation(indicators: IndicatorSet) -> ScoreBlock:
+    core = indicators.get("core_inflation_yoy")
+    headline = indicators.get("headline_inflation_yoy")
+    trend = first_available(indicators, ["core_inflation_trend", "headline_inflation_trend"])
+    core_score, core_class = classify_ecb_core_inflation(core)
+    headline_score, headline_class = classify_ecb_headline_inflation(headline)
+    trend_score, trend_class = classify_inflation_trend(trend)
+    evidence = [
+        IndicatorEvidence(
+            "Core HICP YoY",
+            core,
+            "pct",
+            ["<2.3% = LOW", "2.3-3.0% = STICKY", ">3.0% = HIGH"],
+            core_class,
+            core_score,
+            ecb_core_inflation_explanation(core_class),
+        ),
+        IndicatorEvidence(
+            "Headline HICP YoY",
+            headline,
+            "pct",
+            ["<2.0% = LOW", "2.0-3.0% = MODERATE", ">3.0% = HIGH"],
+            headline_class,
+            headline_score,
+            ecb_headline_inflation_explanation(headline_class),
+        ),
+        IndicatorEvidence(
+            "Inflation Trend, HICP 3M Change in YoY Rate",
+            trend,
+            "pp",
+            ["<=-0.20 pp = COOLING", "-0.20 to +0.20 pp = STABLE", ">=+0.20 pp = ACCELERATING"],
+            trend_class,
+            trend_score,
+            inflation_trend_explanation(trend_class),
+        ),
+    ]
+    score = max(sum(item.score_contribution for item in evidence), 0)
+    if core_class == "HIGH" and trend_class == "ACCELERATING":
+        label = "HIGH"
+    elif core_class in {"STICKY", "HIGH"}:
+        label = "STICKY"
+    elif headline_class in {"MODERATE", "HIGH"}:
+        label = "MODERATE"
+    else:
+        label = "LOW"
+    meaning = {
+        "HIGH": "Broad, re-accelerating inflation supports a tighter ECB stance.",
+        "STICKY": "Domestic inflation persistence argues for patience and limits rapid ECB easing.",
+        "MODERATE": "Headline HICP is not fully target-consistent, but it does not by itself justify a hawkish ECB stance.",
+        "LOW": "Inflation does not create a strong barrier to ECB easing.",
+    }[label]
+    return ScoreBlock(label, score, count_available(evidence), 3, unavailable_notes(evidence), evidence, meaning)
+
+
+def score_ecb_labor_slack(indicators: IndicatorSet) -> ScoreBlock:
+    unemployment = indicators.get("unemployment_rate")
+    gap = indicators.get("unemployment_gap")
+    if unemployment is None:
+        level_score, level_class = 0, "UNKNOWN"
+    elif unemployment > 8:
+        level_score, level_class = 20, "HIGH"
+    elif unemployment >= 6.5:
+        level_score, level_class = 8, "MODERATE"
+    else:
+        level_score, level_class = 2, "LOW"
+    gap_score, gap_class = classify_unemployment_gap(gap)
+    evidence = [
+        IndicatorEvidence(
+            "Eurozone Unemployment Rate",
+            unemployment,
+            "pct",
+            ["<6.5% = LOW slack", "6.5-8.0% = MODERATE slack", ">8.0% = HIGH slack"],
+            level_class,
+            level_score,
+            "The unemployment level gauges area-wide labor slack without using a US payroll proxy." if unemployment is not None else "Eurozone unemployment is unavailable.",
+        ),
+        IndicatorEvidence(
+            "Unemployment Gap from 12M Low",
+            gap,
+            "pp",
+            ["<0.3 pp = LOW", "0.3-0.5 pp = MODERATE", ">=0.5 pp = HIGH"],
+            gap_class,
+            gap_score,
+            labor_gap_explanation(gap_class),
+        ),
+    ]
+    score = sum(item.score_contribution for item in evidence)
+    label = label_from_weakness(score)
+    return ScoreBlock(label, score, count_available(evidence), 2, unavailable_notes(evidence), evidence, weakness_policy_meaning("Eurozone labor slack", label))
+
+
+def score_ecb_growth_weakness(indicators: IndicatorSet) -> ScoreBlock:
+    growth = indicators.get("growth_yoy")
+    confidence_yoy = indicators.get("business_confidence_yoy")
+    growth_score, growth_class = classify_growth(growth)
+    confidence_score, confidence_class = classify_external_growth(confidence_yoy)
+    evidence = [
+        IndicatorEvidence(
+            "Eurozone Real GDP Growth YoY",
+            growth,
+            "pct",
+            ["<1.0% = HIGH weakness", "1.0-2.0% = MODERATE weakness", ">2.0% = LOW weakness"],
+            growth_class,
+            growth_score,
+            growth_explanation(growth_class),
+        ),
+        IndicatorEvidence(
+            "Eurozone Business Confidence Index YoY Change",
+            confidence_yoy,
+            "pct",
+            ["<0.0% = HIGH weakness", "0.0-2.0% = MODERATE weakness", ">2.0% = LOW weakness"],
+            confidence_class,
+            confidence_score,
+            "This is the year-over-year change in a normalized confidence index, not a PMI diffusion-index level. " + external_growth_explanation(confidence_class),
+        ),
+    ]
+    score = sum(item.score_contribution for item in evidence)
+    label = label_from_weakness(score)
+    return ScoreBlock(label, score, count_available(evidence), 2, unavailable_notes(evidence), evidence, weakness_policy_meaning("Eurozone growth", label))
+
+
+def score_ecb_financial_stress(indicators: IndicatorSet) -> ScoreBlock:
+    spread = indicators.get("sovereign_spread")
+    lending = indicators.get("bank_lending_stress")
+    credit = indicators.get("euro_credit_spread")
+    spread_score, spread_class = classify_ecb_sovereign_spread(spread)
+    evidence = [
+        IndicatorEvidence(
+            "Italy-Germany 10Y Sovereign Spread Proxy",
+            spread,
+            "pp",
+            ["<1.5 pp = LOW", "1.5-2.5 pp = MODERATE", ">2.5 pp = HIGH"],
+            spread_class,
+            spread_score,
+            ecb_spread_explanation(spread_class),
+        ),
+        IndicatorEvidence(
+            "Eurozone Bank Lending Stress",
+            lending,
+            "number",
+            ["ECB bank-lending indicator required; unavailable values receive no score"],
+            "UNKNOWN" if lending is None else "AVAILABLE",
+            0,
+            "Bank-lending stress is not currently automated, so it is not replaced by VIX thresholds.",
+        ),
+        IndicatorEvidence(
+            "Eurozone Credit / Financial Stress Proxy",
+            credit,
+            "number",
+            ["ECB or Eurozone credit-stress indicator required; unavailable values receive no score"],
+            "UNKNOWN" if credit is None else "AVAILABLE",
+            0,
+            "A suitable Eurozone credit-stress series is unavailable; no generic US volatility proxy is used.",
+        ),
+    ]
+    score = sum(item.score_contribution for item in evidence)
+    label = label_from_weakness(score)
+    return ScoreBlock(label, score, count_available(evidence), 3, unavailable_notes(evidence), evidence, weakness_policy_meaning("Eurozone financial and fragmentation stress", label))
 
 
 def score_inflation(indicators: IndicatorSet, profile: EconomyProfile) -> ScoreBlock:
@@ -281,6 +449,36 @@ def classify_inflation(value: float | None, profile: EconomyProfile) -> tuple[fl
     return 8, "LOW"
 
 
+def classify_ecb_core_inflation(value: float | None) -> tuple[float, str]:
+    if value is None:
+        return 0, "UNKNOWN"
+    if value > 3.0:
+        return 40, "HIGH"
+    if value >= 2.3:
+        return 25, "STICKY"
+    return 8, "LOW"
+
+
+def classify_ecb_headline_inflation(value: float | None) -> tuple[float, str]:
+    if value is None:
+        return 0, "UNKNOWN"
+    if value > 3.0:
+        return 25, "HIGH"
+    if value >= 2.0:
+        return 14, "MODERATE"
+    return 3, "LOW"
+
+
+def classify_ecb_sovereign_spread(value: float | None) -> tuple[float, str]:
+    if value is None:
+        return 0, "UNKNOWN"
+    if value > 2.5:
+        return 25, "HIGH"
+    if value >= 1.5:
+        return 12, "MODERATE"
+    return 3, "LOW"
+
+
 def classify_headline_inflation(value: float | None, profile: EconomyProfile) -> tuple[float, str]:
     if value is None:
         return 0, "UNKNOWN"
@@ -516,6 +714,36 @@ def inflation_explanation(classification: str, profile: EconomyProfile) -> str:
     if classification == "LOW":
         return f"{primary_inflation_name(profile)} is below the moderate threshold, so it adds little tightening pressure."
     return "The primary inflation series is missing, so it contributes no score and lowers confidence."
+
+
+def ecb_core_inflation_explanation(classification: str) -> str:
+    if classification == "HIGH":
+        return "Core HICP is above 3%, indicating substantial domestic inflation persistence."
+    if classification == "STICKY":
+        return "Core HICP remains above a target-consistent comfort zone, limiting the case for aggressive easing."
+    if classification == "LOW":
+        return "Core HICP is below the sticky threshold and creates less resistance to easing."
+    return "Core HICP is unavailable, so headline HICP cannot establish domestic persistence by itself."
+
+
+def ecb_headline_inflation_explanation(classification: str) -> str:
+    if classification == "HIGH":
+        return "Headline HICP is elevated, but core, services, wages, and energy attribution determine whether the pressure is persistent."
+    if classification == "MODERATE":
+        return "Headline HICP is moderately above target and does not alone justify a HIGH inflation block."
+    if classification == "LOW":
+        return "Headline HICP is below 2%, reducing the headline inflation constraint."
+    return "Headline HICP is unavailable and contributes no score."
+
+
+def ecb_spread_explanation(classification: str) -> str:
+    if classification == "HIGH":
+        return "A wide Italy-Germany spread signals material fragmentation pressure and strengthens the case for ECB caution or support."
+    if classification == "MODERATE":
+        return "Peripheral sovereign spreads show some fragmentation pressure."
+    if classification == "LOW":
+        return "Peripheral sovereign spreads are contained and do not signal acute Eurozone financial stress."
+    return "The peripheral sovereign spread proxy is unavailable, reducing confidence in the financial-stress assessment."
 
 
 def headline_inflation_explanation(classification: str) -> str:
