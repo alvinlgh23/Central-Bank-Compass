@@ -1,0 +1,270 @@
+fred:
+  base_url: "https://api.stlouisfed.org/fred/series/observations"
+  observation_start: "2000-01-01"
+
+scoring:
+  tightening_threshold: 30
+  easing_threshold: -30
+
+liquidity:
+  weights:
+    US: 0.40
+    CN: 0.25
+    EZ: 0.15
+    JP: 0.15
+    SG: 0.05
+  fred_series:
+    US:
+      m2: M2SL
+      fed_balance_sheet: WALCL
+    EZ:
+      money_supply: MYAGM2EZM196N
+    JP: {}
+    SG: {}
+    CN: {}
+  placeholders:
+    CN:
+      - credit impulse
+      - RRR / policy easing
+    SG:
+      - SGD NEER liquidity impulse
+
+economies:
+  US:
+    data_sources:
+      primary: fred
+      secondary:
+        - fx
+    actual_policy_series:
+      fed_funds_rate: FEDFUNDS
+    indicator_map:
+      core_pce:
+        source: fred
+        series_id: PCEPILFE
+        label: Core PCE
+        expected_source: FRED
+      pce:
+        source: fred
+        series_id: PCEPI
+        label: PCE
+        expected_source: FRED
+      cpi:
+        source: fred
+        series_id: CPIAUCSL
+        label: CPI
+        expected_source: FRED
+      core_cpi:
+        source: fred
+        series_id: CPILFESL
+        label: Core CPI
+        expected_source: FRED
+      unemployment:
+        source: fred
+        series_id: UNRATE
+        label: Unemployment Rate
+        expected_source: FRED
+      payrolls:
+        source: fred
+        series_id: PAYEMS
+        label: Nonfarm Payrolls
+        expected_source: FRED
+      initial_claims:
+        source: fred
+        series_id: ICSA
+        label: Initial Claims
+        expected_source: FRED
+      continuing_claims:
+        source: fred
+        series_id: CCSA
+        label: Continuing Claims
+        expected_source: FRED
+      real_gdp:
+        source: fred
+        series_id: GDPC1
+        label: Real GDP
+        expected_source: FRED
+      retail_sales:
+        source: fred
+        series_id: RSAFS
+        label: Retail Sales
+        expected_source: FRED
+      industrial_production:
+        source: fred
+        series_id: INDPRO
+        label: Industrial Production
+        expected_source: FRED
+      ten_year_yield:
+        source: fred
+        series_id: DGS10
+        label: 10Y Treasury Yield
+        expected_source: FRED
+      two_year_yield:
+        source: fred
+        series_id: DGS2
+        label: 2Y Treasury Yield
+        expected_source: FRED
+      credit_spread:
+        source: fred
+        series_id: BAA10Y
+        label: Baa Corporate Spread
+        expected_source: FRED
+      vix:
+        source: fred
+        series_id: VIXCLS
+        label: VIX
+        expected_source: FRED
+      broad_dollar:
+        source: fx
+        series_id: broad_dollar
+        label: Broad Dollar Index
+        expected_source: FRED / FX module
+  SG:
+    data_sources:
+      primary: fred
+      secondary:
+        - mas
+        - singstat
+        - fx
+    actual_policy_series: {}
+    policy_actions: []
+    indicator_map:
+      cpi:
+        source: fred
+        series_id: FPCPITOTLZGSGP
+        label: Singapore CPI inflation
+        expected_source: FRED / World Bank / SingStat
+      real_gdp:
+        source: fred
+        series_id: SGPNGDPRPCPPPT
+        label: Singapore GDP Growth
+        expected_source: FRED / SingStat
+      unemployment:
+        source: fred
+        series_id: SGPURAMS
+        label: Singapore Unemployment
+        expected_source: FRED / SingStat
+      usd_sgd:
+        source: fx
+        series_id: usd_sgd
+        label: USD/SGD
+        expected_source: FRED / FX module
+      mas_core_inflation:
+        source: mas
+        series_id: mas_core_inflation
+        label: MAS core inflation
+        expected_source: MAS / SingStat
+        status: TODO
+      sgd_neer_shadow_proxy:
+        source: mas
+        series_id: sgd_neer_shadow_proxy
+        label: SGD NEER shadow proxy
+        expected_source: FRED / MAS shadow proxy
+      external_demand:
+        source: singstat
+        series_id: external_demand
+        label: external demand
+        expected_source: SingStat
+      import_inflation_pressure:
+        source: mas
+        series_id: import_inflation_pressure
+        label: import inflation pressure
+        expected_source: MAS / SingStat
+    placeholders:
+      - MAS core inflation
+      - official SGD NEER policy-band position
+  EZ:
+    data_sources:
+      primary: fred
+      secondary:
+        - ecb
+        - fx
+        - oecd
+    actual_policy_series:
+      ecb_deposit_facility_rate: ECBDFR
+    indicator_map:
+      hicp:
+        source: fred
+        series_id: CP0000EZ19M086NEST
+        label: HICP inflation
+        expected_source: FRED / ECB
+      unemployment:
+        source: fred
+        series_id: LRHUTTTTEZM156S
+        label: Eurozone unemployment
+        expected_source: FRED / ECB / OECD
+      real_gdp:
+        source: fred
+        series_id: CLVMNACSCAB1GQEA19
+        label: Eurozone GDP growth
+        expected_source: FRED / ECB / OECD
+      pmi:
+        source: fred
+        series_id: BSCICP03EZM665S
+        label: Eurozone business confidence / PMI proxy
+        expected_source: FRED / OECD
+      eur_usd:
+        source: fx
+        series_id: eur_usd
+        label: EUR/USD
+        expected_source: FRED / FX module
+      core_hicp:
+        source: ecb
+        series_id: core_hicp
+        label: core HICP
+        expected_source: ECB
+      sovereign_spreads:
+        source: ecb
+        series_id: sovereign_spreads
+        label: sovereign spreads
+        expected_source: ECB / market data
+    placeholders: []
+  JP:
+    data_sources:
+      primary: fred
+      secondary:
+        - boj
+        - fx
+        - oecd
+    actual_policy_series:
+      boj_policy_rate: IRSTCB01JPM156N
+    indicator_map:
+      cpi_ex_fresh_food:
+        source: fred
+        series_id: JPNCPIALLMINMEI
+        label: CPI ex fresh food
+        expected_source: FRED / BOJ
+      unemployment:
+        source: fred
+        series_id: LRHUTTTTJPM156S
+        label: Japan unemployment
+        expected_source: FRED / OECD
+      real_gdp:
+        source: fred
+        series_id: JPNRGDPEXP
+        label: Japan GDP growth
+        expected_source: FRED / OECD
+      usd_jpy:
+        source: fx
+        series_id: usd_jpy
+        label: USD/JPY
+        expected_source: FRED / FX module
+      ten_year_yield:
+        source: fred
+        series_id: IRLTLT01JPM156N
+        label: 10Y JGB yield
+        expected_source: FRED / BOJ
+      wage_growth:
+        source: boj
+        series_id: wage_growth
+        label: wage growth
+        expected_source: BOJ / MHLW
+        status: TODO
+      inflation_expectations:
+        source: boj
+        series_id: inflation_expectations
+        label: inflation expectations
+        expected_source: BOJ
+        status: TODO
+    placeholders:
+      - wage growth
+      - inflation expectations
